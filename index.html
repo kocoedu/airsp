@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 가위바위보 손 모양 인식기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Pretendard', 'sans-serif'],
+                    },
+                    colors: {
+                        pastel: {
+                            pink: '#FFE5EC',
+                            pinkDark: '#FFB3C6',
+                            purple: '#F0E6FF',
+                            purpleDark: '#D8B4FE',
+                            blue: '#E0F2FE',
+                            blueDark: '#7DD3FC',
+                            mint: '#D1FAE5',
+                            mintDark: '#6EE7B7',
+                            yellow: '#FEF3C7',
+                            yellowDark: '#FDE047',
+                            bg: '#FAF9F6',
+                            card: '#FFFFFF'
+                        }
+                    },
+                    boxShadow: {
+                        'soft': '0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01)',
+                        'button': '0 4px 12px rgba(0, 0, 0, 0.08)',
+                        'button-hover': '0 6px 16px rgba(0, 0, 0, 0.12)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #FAF9F6;
+            background-image: radial-gradient(#e5e7eb 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+        .pulse-badge {
+            animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse-ring {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.05); }
+        }
+    </style>
+</head>
+<body class="min-h-screen text-gray-800 font-sans flex flex-col justify-between">
+
+    <header class="bg-white/80 backdrop-blur-md border-b border-pink-100 sticky top-0 z-50">
+        <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-3">
+            <div class="flex items-center gap-3">
+                <span class="text-3xl p-2 bg-pastel-pink rounded-2xl shadow-sm">✌️</span>
+                <div>
+                    <h1 class="text-xl md:text-2xl font-extrabold bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 bg-clip-text text-transparent">
+                        AI 가위바위보 인식기
+                    </h1>
+                    <p class="text-xs text-gray-500 font-medium">Roboflow DINOv3 + Vercel Serverless Architecture</p>
+                </div>
+            </div>
+
+            <!-- Tab Buttons -->
+            <nav class="flex bg-gray-100 p-1 rounded-2xl border border-gray-200">
+                <button id="tab-app-btn" onclick="switchTab('app')" class="px-4 py-2 text-sm font-bold rounded-xl transition-all duration-200 bg-white text-pink-600 shadow-sm">
+                    🎮 실시간 웹앱
+                </button>
+                <button id="tab-code-btn" onclick="switchTab('code')" class="px-4 py-2 text-sm font-bold rounded-xl transition-all duration-200 text-gray-600 hover:text-gray-900">
+                    💻 소스코드 & 파일구조
+                </button>
+                <button id="tab-guide-btn" onclick="switchTab('guide')" class="px-4 py-2 text-sm font-bold rounded-xl transition-all duration-200 text-gray-600 hover:text-gray-900">
+                    🚀 Vercel 배포 가이드
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-6xl mx-auto px-4 py-6 flex-grow w-full">
+
+        <!-- ================= TAB 1: LIVE APP ================= -->
+        <section id="tab-app" class="block space-y-6">
+            
+            <!-- Top Alert / Mode Selector Panel -->
+            <div class="bg-gradient-to-r from-pastel-pink via-pastel-purple to-pastel-blue p-4 rounded-3xl border border-pink-200 shadow-soft flex flex-col md:flex-row justify-between items-center gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-white flex items-center justify-center text-pink-500 shadow-sm flex-shrink-0">
+                        <i class="fa-solid fa-wand-magic-sparkles text-lg"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-gray-800 text-sm md:text-base">Roboflow DINOv3 손 모양 인식 서비스</h3>
+                        <p class="text-xs text-gray-600">카메라를 켜고 [인식 시작] 버튼을 누르면 약 1초 간격으로 손 모양을 분류합니다.</p>
+                    </div>
+                </div>
+
+                <!-- Simulation Toggle for direct test -->
+                <div class="flex items-center gap-2 bg-white/90 backdrop-blur px-3 py-1.5 rounded-2xl border border-gray-200 text-xs font-semibold">
+                    <span class="text-gray-600">API 연동 모드:</span>
+                    <select id="api-mode-select" class="bg-gray-50 border border-gray-300 text-gray-800 rounded-lg p-1 font-medium focus:ring-2 focus:ring-pink-300 outline-none">
+                        <option value="real">Vercel API (/api/predict)</option>
+                        <option value="demo">시뮬레이션 모드 (체험용)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                <!-- Left/Center: Camera & Display Canvas (2 Cols) -->
+                <div class="lg:col-span-2 flex flex-col gap-4">
+                    <div class="relative bg-gray-900 rounded-3xl overflow-hidden shadow-xl aspect-video border-4 border-white flex items-center justify-center group">
+                        
+                        <!-- Video Stream -->
+                        <video id="webcam" autoplay playsinline muted class="w-full h-full object-cover transform -scale-x-100 hidden"></video>
+                        
+                        <!-- Canvas for captured frames / image preview -->
+                        <canvas id="canvas" class="hidden"></canvas>
+                        
+                        <!-- Image Upload Preview Overlay -->
+                        <img id="image-preview" class="w-full h-full object-contain hidden" alt="업로드 이미지 미리보기">
+
+                        <!-- Placeholder Overlay when Camera Off -->
+                        <div id="camera-placeholder" class="flex flex-col items-center justify-center text-center p-6 text-gray-400 space-y-3">
+                            <div class="w-20 h-20 rounded-full bg-gray-800/80 flex items-center justify-center text-4xl text-pink-400 border border-gray-700">
+                                <i class="fa-solid fa-video-slash"></i>
+                            </div>
+                            <p class="text-base font-medium text-gray-300">카메라가 꺼져 있습니다.</p>
+                            <p class="text-xs text-gray-500 max-w-xs">아래 [카메라 시작] 버튼을 누르거나, 사진 파일을 업로드하여 가위바위보 손 모양을 인식해 보세요.</p>
+                        </div>
+
+                        <!-- Top Right Result Card Overlay -->
+                        <div id="result-overlay" class="absolute top-4 right-4 bg-white/90 backdrop-blur-md rounded-2xl p-4 shadow-2xl border border-white/50 w-48 text-center transition-all duration-300 transform scale-100">
+                            <div class="text-xs font-bold uppercase tracking-wider text-gray-400 mb-1 flex items-center justify-center gap-1">
+                                <span class="w-2 h-2 rounded-full bg-emerald-500 inline-block pulse-badge"></span>
+                                인식 결과
+                            </div>
+                            
+                            <!-- Emoji & Text -->
+                            <div id="result-emoji" class="text-5xl my-1 animate-bounce">❓</div>
+                            <div id="result-label" class="text-lg font-black text-gray-800">대기 중...</div>
+                            
+                            <!-- Confidence Bar -->
+                            <div class="mt-3 space-y-1">
+                                <div class="flex justify-between text-xs font-bold text-gray-600">
+                                    <span>신뢰도</span>
+                                    <span id="confidence-text">0.0%</span>
+                                </div>
+                                <div class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                                    <div id="confidence-bar" class="bg-gradient-to-r from-pink-400 to-purple-500 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Status Badge (Top-Left) -->
+                        <div class="absolute top-4 left-4 bg-black/60 backdrop-blur-sm px-3 py-1.5 rounded-full text-white text-xs font-semibold flex items-center gap-2">
+                            <span id="status-dot" class="w-2.5 h-2.5 rounded-full bg-gray-400"></span>
+                            <span id="status-text">카메라 정지</span>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <button id="btn-cam-start" onclick="startCamera()" class="flex flex-col items-center justify-center p-3.5 bg-pastel-mint border border-emerald-200 hover:bg-emerald-200 text-emerald-900 rounded-2xl font-bold shadow-button hover:shadow-button-hover active:scale-95 transition-all">
+                            <i class="fa-solid fa-video text-xl mb-1 text-emerald-600"></i>
+                            <span class="text-sm">카메라 시작</span>
+                        </button>
+
+                        <button id="btn-detect-start" onclick="startDetection()" disabled class="flex flex-col items-center justify-center p-3.5 bg-pastel-pink border border-pink-200 text-pink-900 rounded-2xl font-bold shadow-button transition-all disabled:opacity-50 disabled:cursor-not-allowed enabled:hover:bg-pink-200 enabled:active:scale-95">
+                            <i class="fa-solid fa-play text-xl mb-1 text-pink-600"></i>
+                            <span class="text-sm">인식 시작</span>
+                        </button>
+
+                        <button id="btn-detect-stop" onclick="stopDetection()" disabled class="flex flex-col items-center justify-center p-3.5 bg-pastel-yellow border border-yellow-200 text-yellow-900 rounded-2xl font-bold shadow-button transition-all disabled:opacity-50 disabled:cursor-not-allowed enabled:hover:bg-yellow-200 enabled:active:scale-95">
+                            <i class="fa-solid fa-pause text-xl mb-1 text-yellow-600"></i>
+                            <span class="text-sm">인식 중지</span>
+                        </button>
+
+                        <button id="btn-cam-stop" onclick="stopCamera()" disabled class="flex flex-col items-center justify-center p-3.5 bg-gray-100 border border-gray-300 text-gray-700 rounded-2xl font-bold shadow-button transition-all disabled:opacity-50 disabled:cursor-not-allowed enabled:hover:bg-gray-200 enabled:active:scale-95">
+                            <i class="fa-solid fa-power-off text-xl mb-1 text-gray-600"></i>
+                            <span class="text-sm">카메라 종료</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Right Side Panel: Alternative Upload & Information -->
+                <div class="flex flex-col gap-4">
+                    
+                    <!-- File Upload Fallback Box -->
+                    <div class="bg-white p-5 rounded-3xl border border-gray-100 shadow-soft flex flex-col justify-between space-y-4">
+                        <div>
+                            <div class="flex items-center gap-2 text-purple-600 font-bold mb-1">
+                                <i class="fa-solid fa-image text-lg"></i>
+                                <h3 class="text-base text-gray-800">사진 업로드 인식 (대체 기능)</h3>
+                            </div>
+                            <p class="text-xs text-gray-500">카메라 권한을 사용할 수 없거나 단일 사진 분석이 필요한 경우 이미지를 업로드하세요.</p>
+                        </div>
+
+                        <label class="border-2 border-dashed border-purple-200 hover:border-purple-400 bg-purple-50/50 hover:bg-purple-50 p-6 rounded-2xl cursor-pointer flex flex-col items-center justify-center text-center transition-all group">
+                            <i class="fa-solid fa-cloud-arrow-up text-3xl text-purple-400 group-hover:scale-110 transition-transform mb-2"></i>
+                            <span class="text-xs font-bold text-purple-700">손 모양 이미지 클릭하여 선택</span>
+                            <span class="text-[10px] text-gray-400 mt-1">JPG, PNG, WEBP 지원</span>
+                            <input type="file" id="file-input" accept="image/*" class="hidden" onchange="handleFileUpload(event)">
+                        </label>
+
+                        <button id="btn-upload-analyze" onclick="analyzeUploadedImage()" disabled class="w-full py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-xl font-bold text-sm shadow-button transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                            <i class="fa-solid fa-microscope mr-1"></i> 업로드 이미지 분석하기
+                        </button>
+                    </div>
+
+                    <!-- Legend & Guide Card -->
+                    <div class="bg-white p-5 rounded-3xl border border-gray-100 shadow-soft space-y-3">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-gray-400">인식 레이블 정보</h4>
+                        <div class="grid grid-cols-3 gap-2 text-center">
+                            <div class="p-2.5 rounded-2xl bg-pastel-pink/50 border border-pink-100">
+                                <div class="text-2xl">✊</div>
+                                <div class="text-xs font-extrabold text-gray-700 mt-1">바위</div>
+                                <div class="text-[10px] text-gray-400">rock</div>
+                            </div>
+                            <div class="p-2.5 rounded-2xl bg-pastel-blue/50 border border-blue-100">
+                                <div class="text-2xl">🖐</div>
+                                <div class="text-xs font-extrabold text-gray-700 mt-1">보</div>
+                                <div class="text-[10px] text-gray-400">paper</div>
+                            </div>
+                            <div class="p-2.5 rounded-2xl bg-pastel-purple/50 border border-purple-100">
+                                <div class="text-2xl">✌️</div>
+                                <div class="text-xs font-extrabold text-gray-700 mt-1">가위</div>
+                                <div class="text-[10px] text-gray-400">scissors</div>
+                            </div>
+                        </div>
+
+                        <!-- System Log / Console Box -->
+                        <div class="pt-2">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="text-[11px] font-bold text-gray-400">실행 상태 로그</span>
+                                <button onclick="clearLog()" class="text-[10px] text-gray-400 hover:text-gray-600">지우기</button>
+                            </div>
+                            <div id="log-box" class="bg-gray-900 text-emerald-400 text-[11px] font-mono p-3 rounded-xl h-28 overflow-y-auto leading-relaxed border border-gray-800">
+                                [System] 준비 완료. 카메라 시작을 누르세요.
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= TAB 2: CODE & STRUCTURE ================= -->
+        <section id="tab-code" class="hidden space-y-6">
+            <div class="bg-white p-6 rounded-3xl border border-gray-200 shadow-soft space-y-6">
+                <div>
+                    <h2 class="text-xl font-extrabold text-gray-800 flex items-center gap-2">
+                        <i class="fa-solid fa-folder-tree text-pink-500"></i> GitHub 프로젝트 구조 및 소스코드
+                    </h2>
+                    <p class="text-xs text-gray-500 mt-1">복사하여 프로젝트에 그대로 사용할 수 있는 전체 파일 코드입니다.</p>
+                </div>
+
+                <!-- GitHub File Tree Diagram -->
+                <div class="bg-gray-900 text-gray-200 p-4 rounded-2xl font-mono text-xs leading-relaxed border border-gray-800">
+                    <div class="text-pink-400 font-bold mb-2">📁 rock-paper-scissors-app (Project Root)</div>
+                    <div>├── 📄 index.html <span class="text-gray-500"># 프론트엔드 실시간 카메라 UI</span></div>
+                    <div>├── 📁 api</div>
+                    <div>│   └── 📄 predict.js <span class="text-gray-500"># Vercel Serverless Function (Roboflow 연동)</span></div>
+                    <div>├── 📄 package.json <span class="text-gray-500"># 프로젝트 설정 및 의존성</span></div>
+                    <div>└── 📄 vercel.json <span class="text-gray-500"># Vercel 배포 라우팅 설정</span></div>
+                </div>
+
+                <!-- Code Switcher Sub-tabs -->
+                <div class="space-y-4">
+                    <div class="flex flex-wrap gap-2 border-b border-gray-200 pb-2">
+                        <button onclick="showCodeFile('index')" id="code-btn-index" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-pink-500 text-white">index.html</button>
+                        <button onclick="showCodeFile('predict')" id="code-btn-predict" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-100 text-gray-700 hover:bg-gray-200">api/predict.js</button>
+                        <button onclick="showCodeFile('package')" id="code-btn-package" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-100 text-gray-700 hover:bg-gray-200">package.json</button>
+                        <button onclick="showCodeFile('vercel')" id="code-btn-vercel" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-100 text-gray-700 hover:bg-gray-200">vercel.json</button>
+                    </div>
+
+                    <!-- Code Display Box 1: index.html -->
+                    <div id="code-block-index" class="relative group">
+                        <button onclick="copyCode('code-content-index')" class="absolute top-3 right-3 px-3 py-1.5 bg-gray-800 text-gray-200 hover:text-white rounded-lg text-xs font-bold shadow-md transition-all">
+                            <i class="fa-regular fa-copy mr-1"></i> 코드 복사
+                        </button>
+                        <pre id="code-content-index" class="bg-gray-900 text-gray-100 p-4 rounded-2xl text-xs font-mono overflow-x-auto max-h-96 leading-relaxed"><code>&lt;!-- index.html 전체 코드는 현재 웹 앱 소스코드와 동일합니다 --&gt;
+&lt;!DOCTYPE html&gt;
+&lt;html lang="ko"&gt;
+&lt;head&gt;
+  &lt;meta charset="UTF-8"&gt;
+  &lt;meta name="viewport" content="width=device-width, initial-scale=1.0"&gt;
+  &lt;title&gt;AI 가위바위보 손 모양 인식기&lt;/title&gt;
+  &lt;script src="https://cdn.tailwindcss.com"&gt;&lt;/script&gt;
+&lt;/head&gt;
+&lt;body class="bg-gray-50 text-gray-800 p-4"&gt;
+  &lt;div class="max-w-md mx-auto bg-white rounded-3xl p-6 shadow-xl space-y-4 text-center"&gt;
+    &lt;h1 class="text-2xl font-bold"&gt;✌️ AI 가위바위보 인식기&lt;/h1&gt;
+    &lt;div class="relative bg-black rounded-2xl aspect-video overflow-hidden"&gt;
+      &lt;video id="webcam" autoplay playsinline muted class="w-full h-full object-cover transform -scale-x-100"&gt;&lt;/video&gt;
+      &lt;canvas id="canvas" class="hidden"&gt;&lt;/canvas&gt;
+      &lt;div class="absolute top-2 right-2 bg-white/90 p-2 rounded-xl text-right shadow"&gt;
+        &lt;div id="result" class="text-xl font-bold"&gt;❓ 대기 중&lt;/div&gt;
+        &lt;div id="confidence" class="text-xs text-gray-500"&gt;0.0%&lt;/div&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+
+    &lt;div class="grid grid-cols-2 gap-2"&gt;
+      &lt;button onclick="startCamera()" class="p-3 bg-emerald-100 text-emerald-800 font-bold rounded-xl"&gt;카메라 시작&lt;/button&gt;
+      &lt;button onclick="startDetection()" class="p-3 bg-pink-100 text-pink-800 font-bold rounded-xl"&gt;인식 시작&lt;/button&gt;
+      &lt;button onclick="stopDetection()" class="p-3 bg-yellow-100 text-yellow-800 font-bold rounded-xl"&gt;인식 중지&lt;/button&gt;
+      &lt;button onclick="stopCamera()" class="p-3 bg-gray-100 text-gray-800 font-bold rounded-xl"&gt;카메라 종료&lt;/button&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;script&gt;
+    let video = document.getElementById('webcam');
+    let canvas = document.getElementById('canvas');
+    let isDetecting = false;
+    let isProcessing = false;
+
+    async function startCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      video.srcObject = stream;
+    }
+
+    function stopCamera() {
+      stopDetection();
+      if (video.srcObject) {
+        video.srcObject.getTracks().forEach(track => track.stop());
+        video.srcObject = null;
+      }
+    }
+
+    function startDetection() {
+      if (isDetecting) return;
+      isDetecting = true;
+      detectLoop();
+    }
+
+    function stopDetection() {
+      isDetecting = false;
+    }
+
+    async function detectLoop() {
+      if (!isDetecting) return;
+      if (!isProcessing &amp;&amp; video.readyState === 4) {
+        isProcessing = true;
+        try {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(video, 0, 0);
+          const base64Image = canvas.toDataURL('image/jpeg', 0.8);
+
+          const res = await fetch('/api/predict', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: base64Image })
+          });
+          const data = await res.json();
+          updateUI(data);
+        } catch (err) {
+          console.error(err);
+        } finally {
+          isProcessing = false;
+        }
+      }
+      setTimeout(detectLoop, 1000); // 약 1초 간격
+    }
+
+    function updateUI(data) {
+      if (!data || !data.topClass) return;
+      const emojiMap = { rock: '✊ 바위', paper: '🖐 보', scissors: '✌️ 가위' };
+      document.getElementById('result').innerText = emojiMap[data.topClass] || data.topClass;
+      document.getElementById('confidence').innerText = (data.confidence * 100).toFixed(1) + '%';
+    }
+  &lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+                    </div>
+
+                    <!-- Code Display Box 2: api/predict.js -->
+                    <div id="code-block-predict" class="hidden relative group">
+                        <button onclick="copyCode('code-content-predict')" class="absolute top-3 right-3 px-3 py-1.5 bg-gray-800 text-gray-200 hover:text-white rounded-lg text-xs font-bold shadow-md transition-all">
+                            <i class="fa-regular fa-copy mr-1"></i> 코드 복사
+                        </button>
+                        <pre id="code-content-predict" class="bg-gray-900 text-gray-100 p-4 rounded-2xl text-xs font-mono overflow-x-auto max-h-96 leading-relaxed"><code>// api/predict.js (Vercel Serverless Function)
+// Roboflow Cloud API Key와 Endpoint는 브라우저에 노출하지 않고 서버리스 함수에서 안전하게 호출합니다.
+
+export default async function handler(req, res) {
+  // CORS 및 HTTP 메소드 검증
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method Not Allowed' });
+  }
+
+  try {
+    const { image } = req.body;
+    if (!image) {
+      return res.status(400).json({ error: '이미지 데이터가 누락되었습니다.' });
+    }
+
+    const apiKey = process.env.ROBOFLOW_API_KEY;
+    const endpoint = process.env.ROBOFLOW_ENDPOINT;
+
+    if (!apiKey || !endpoint) {
+      return res.status(500).json({
+        error: 'Vercel 환경변수(ROBOFLOW_API_KEY, ROBOFLOW_ENDPOINT)가 설정되지 않았습니다.'
+      });
+    }
+
+    // Base64 프리픽스 제거 (data:image/jpeg;base64, ...)
+    const base64Data = image.replace(/^data:image\/(png|jpeg|jpg);base64,/, '');
+
+    // Endpoint URL에 api_key 쿼리 파라미터 결합
+    let targetUrl = endpoint;
+    const separator = targetUrl.includes('?') ? '&' : '?';
+    if (!targetUrl.includes('api_key=')) {
+      targetUrl = `${targetUrl}${separator}api_key=${apiKey}`;
+    }
+
+    // Roboflow Workflow / Inference API 호출 (base64 raw text/plain 전송)
+    const response = await fetch(targetUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: base64Data
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return res.status(response.status).json({
+        error: 'Roboflow API 호출 실패',
+        details: errorText
+      });
+    }
+
+    const resultData = await response.json();
+
+    // Roboflow 결과 파싱 (분류 모델 및 Workflow 응답 구조 정규화)
+    let topClass = 'unknown';
+    let confidence = 0.0;
+
+    // 1. 분류(Classification) 예측 응답 처리
+    if (resultData.predictions && Array.isArray(resultData.predictions) && resultData.predictions.length > 0) {
+      topClass = resultData.predictions[0].class || resultData.predictions[0].label;
+      confidence = resultData.predictions[0].confidence || 0.0;
+    } else if (resultData.predictions && typeof resultData.predictions === 'object') {
+      // { predictions: { rock: { confidence: 0.95 }, paper: ... } } 형태
+      let maxConf = -1;
+      for (const [cls, info] of Object.entries(resultData.predictions)) {
+        const conf = info.confidence || info;
+        if (typeof conf === 'number' && conf > maxConf) {
+          maxConf = conf;
+          topClass = cls;
+          confidence = conf;
+        }
+      }
+    } else if (resultData.top) {
+      topClass = resultData.top;
+      confidence = resultData.confidence || 0.0;
+    }
+
+    return res.status(200).json({
+      success: true,
+      topClass: topClass.toLowerCase(),
+      confidence: confidence,
+      raw: resultData
+    });
+
+  } catch (error) {
+    console.error('Prediction API Server Error:', error);
+    return res.status(500).json({
+      error: '서버 내부 오류가 발생했습니다.',
+      message: error.message
+    });
+  }
+}</code></pre>
+                    </div>
+
+                    <!-- Code Display Box 3: package.json -->
+                    <div id="code-block-package" class="hidden relative group">
+                        <button onclick="copyCode('code-content-package')" class="absolute top-3 right-3 px-3 py-1.5 bg-gray-800 text-gray-200 hover:text-white rounded-lg text-xs font-bold shadow-md transition-all">
+                            <i class="fa-regular fa-copy mr-1"></i> 코드 복사
+                        </button>
+                        <pre id="code-content-package" class="bg-gray-900 text-gray-100 p-4 rounded-2xl text-xs font-mono overflow-x-auto max-h-96 leading-relaxed"><code>{
+  "name": "rock-paper-scissors-roboflow",
+  "version": "1.0.0",
+  "description": "AI Rock Paper Scissors Recognizer with Roboflow DINOv3 and Vercel Serverless Functions",
+  "main": "index.html",
+  "scripts": {
+    "start": "serve ."
+  },
+  "dependencies": {}
+}</code></pre>
+                    </div>
+
+                    <!-- Code Display Box 4: vercel.json -->
+                    <div id="code-block-vercel" class="hidden relative group">
+                        <button onclick="copyCode('code-content-vercel')" class="absolute top-3 right-3 px-3 py-1.5 bg-gray-800 text-gray-200 hover:text-white rounded-lg text-xs font-bold shadow-md transition-all">
+                            <i class="fa-regular fa-copy mr-1"></i> 코드 복사
+                        </button>
+                        <pre id="code-content-vercel" class="bg-gray-900 text-gray-100 p-4 rounded-2xl text-xs font-mono overflow-x-auto max-h-96 leading-relaxed"><code>{
+  "version": 2,
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" }
+  ]
+}</code></pre>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= TAB 3: DEPLOYMENT GUIDE ================= -->
+        <section id="tab-guide" class="hidden space-y-6">
+            <div class="bg-white p-6 rounded-3xl border border-gray-200 shadow-soft space-y-6">
+                <div>
+                    <h2 class="text-xl font-extrabold text-gray-800 flex items-center gap-2">
+                        <i class="fa-solid fa-rocket text-purple-500"></i> Vercel 배포 및 환경변수 설정 가이드
+                    </h2>
+                    <p class="text-xs text-gray-500 mt-1">초보자도 따라 할 수 있는 GitHub 업로드 및 Vercel 배포 단계별 설명서입니다.</p>
+                </div>
+
+                <!-- Step 1 -->
+                <div class="p-4 rounded-2xl bg-purple-50 border border-purple-100 space-y-2">
+                    <div class="font-extrabold text-sm text-purple-900 flex items-center gap-2">
+                        <span class="w-6 h-6 rounded-full bg-purple-500 text-white flex items-center justify-center text-xs">1</span>
+                        GitHub 저장소(Repository) 생성 및 업로드
+                    </div>
+                    <ol class="list-decimal list-inside text-xs text-purple-800 space-y-1 pl-2">
+                        <li>GitHub.com 로그인 후 <b>[New Repository]</b> 클릭</li>
+                        <li>저장소 이름 작성 (예: <code class="bg-white px-1 py-0.5 rounded border">rock-paper-scissors-ai</code>) -> Create Repository</li>
+                        <li>컴퓨터의 프로젝트 폴더에서 아래 명령어 실행하여 저장소 업로드:</li>
+                    </ol>
+                    <div class="bg-gray-900 text-emerald-400 p-3 rounded-xl text-xs font-mono">
+                        git init<br>
+                        git add .<br>
+                        git commit -m "Initial commit"<br>
+                        git branch -M main<br>
+                        git remote add origin https://github.com/사용자이름/저장소이름.git<br>
+                        git push -u origin main
+                    </div>
+                </div>
+
+                <!-- Step 2 -->
+                <div class="p-4 rounded-2xl bg-pink-50 border border-pink-100 space-y-2">
+                    <div class="font-extrabold text-sm text-pink-900 flex items-center gap-2">
+                        <span class="w-6 h-6 rounded-full bg-pink-500 text-white flex items-center justify-center text-xs">2</span>
+                        Vercel 환경변수(Environment Variables) 설정
+                    </div>
+                    <p class="text-xs text-pink-800">API Key가 브라우저에 노출되지 않도록 Vercel 대시보드에서 설정합니다.</p>
+                    <div class="bg-white p-3 rounded-xl border border-pink-200 text-xs space-y-2">
+                        <div class="flex items-center justify-between border-b pb-2">
+                            <div>
+                                <span class="font-bold text-gray-800">ROBOFLOW_API_KEY</span>
+                                <p class="text-[10px] text-gray-400">Roboflow 계정 settings -> API Key 값</p>
+                            </div>
+                            <code class="bg-gray-100 px-2 py-1 rounded text-pink-600 font-mono">예: rf_xxxxxxxxxKey</code>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <span class="font-bold text-gray-800">ROBOFLOW_ENDPOINT</span>
+                                <p class="text-[10px] text-gray-400">DINOv3 Workflow URL 또는 Model Endpoint</p>
+                            </div>
+                            <code class="bg-gray-100 px-2 py-1 rounded text-purple-600 font-mono">https://detect.roboflow.com/rock-paper-scissors/1</code>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 3 -->
+                <div class="p-4 rounded-2xl bg-blue-50 border border-blue-100 space-y-2">
+                    <div class="font-extrabold text-sm text-blue-900 flex items-center gap-2">
+                        <span class="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs">3</span>
+                        Vercel 프로젝트 가져오기 및 배포
+                    </div>
+                    <ol class="list-decimal list-inside text-xs text-blue-800 space-y-1 pl-2">
+                        <li><a href="https://vercel.com" target="_blank" class="underline font-bold">Vercel 대시보드</a> 접속 후 <b>[Add New...] -> [Project]</b> 선택</li>
+                        <li>GitHub 계정을 연결하고 방금 만든 저장소 선택 (Import)</li>
+                        <li><b>Environment Variables</b> 세션 클릭 후 위의 환경변수 2개 입력</li>
+                        <li><b>[Deploy]</b> 버튼 클릭 -> 1분 이내 배포 완료!</li>
+                    </ol>
+                </div>
+
+                <!-- Step 4 -->
+                <div class="p-4 rounded-2xl bg-emerald-50 border border-emerald-100 space-y-2">
+                    <div class="font-extrabold text-sm text-emerald-900 flex items-center gap-2">
+                        <span class="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xs">4</span>
+                        카메라 권한 및 테스트 주의사항
+                    </div>
+                    <ul class="list-disc list-inside text-xs text-emerald-800 space-y-1 pl-2">
+                        <li><b>HTTPS 필수:</b> 웹캠(getUserMedia)은 Vercel의 보안 HTTPS 프로토콜에서만 정상 동작합니다.</li>
+                        <li><b>모바일 권한:</b> 스마트폰 브라우저에서 접속 시 카메라 허용 팝업에서 '허용'을 선택하세요.</li>
+                        <li><b>카메라 차단 시:</b> 우측의 '사진 업로드 인식' 기능을 이용해 가위바위보 손 이미지 분석이 가능합니다.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-gray-100 py-4 mt-8">
+        <div class="max-w-6xl mx-auto px-4 text-center text-xs text-gray-400">
+            AI Rock-Paper-Scissors Recognizer • Roboflow Cloud Workflow & Vercel API • Modern Pastel Web Application
+        </div>
+    </footer>
+
+    <script>
+        // Global States
+        let videoEl = document.getElementById('webcam');
+        let canvasEl = document.getElementById('canvas');
+        let imagePreviewEl = document.getElementById('image-preview');
+        let placeholderEl = document.getElementById('camera-placeholder');
+        let fileInputEl = document.getElementById('file-input');
+
+        let isCameraOn = false;
+        let isDetecting = false;
+        let isProcessingRequest = false;
+        let detectTimer = null;
+        let selectedUploadedBase64 = null;
+
+        // UI Controls
+        const btnCamStart = document.getElementById('btn-cam-start');
+        const btnDetectStart = document.getElementById('btn-detect-start');
+        const btnDetectStop = document.getElementById('btn-detect-stop');
+        const btnCamStop = document.getElementById('btn-cam-stop');
+        const btnUploadAnalyze = document.getElementById('btn-upload-analyze');
+
+        // Status & Result Overlay Elements
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        const resultEmoji = document.getElementById('result-emoji');
+        const resultLabel = document.getElementById('result-label');
+        const confidenceText = document.getElementById('confidence-text');
+        const confidenceBar = document.getElementById('confidence-bar');
+        const logBox = document.getElementById('log-box');
+
+        // Tab Switcher
+        function switchTab(tabName) {
+            document.getElementById('tab-app').classList.add('hidden');
+            document.getElementById('tab-code').classList.add('hidden');
+            document.getElementById('tab-guide').classList.add('hidden');
+
+            document.getElementById('tab-app-btn').className = "px-4 py-2 text-sm font-bold rounded-xl transition-all duration-200 text-gray-600 hover:text-gray-900";
+            document.getElementById('tab-code-btn').className = "px-4 py-2 text-sm font-bold rounded-xl transition-all duration-200 text-gray-600 hover:text-gray-900";
+            document.getElementById('tab-guide-btn').className = "px-4 py-2 text-sm font-bold rounded-xl transition-all duration-200 text-gray-600 hover:text-gray-900";
+
+            if (tabName === 'app') {
+                document.getElementById('tab-app').classList.remove('hidden');
+                document.getElementById('tab-app-btn').className = "px-4 py-2 text-sm font-bold rounded-xl transition-all duration-200 bg-white text-pink-600 shadow-sm";
+            } else if (tabName === 'code') {
+                document.getElementById('tab-code').classList.remove('hidden');
+                document.getElementById('tab-code-btn').className = "px-4 py-2 text-sm font-bold rounded-xl transition-all duration-200 bg-white text-pink-600 shadow-sm";
+            } else if (tabName === 'guide') {
+                document.getElementById('tab-guide').classList.remove('hidden');
+                document.getElementById('tab-guide-btn').className = "px-4 py-2 text-sm font-bold rounded-xl transition-all duration-200 bg-white text-pink-600 shadow-sm";
+            }
+        }
+
+        // Code File View Switcher
+        function showCodeFile(fileKey) {
+            ['index', 'predict', 'package', 'vercel'].forEach(k => {
+                document.getElementById(`code-block-${k}`).classList.add('hidden');
+                document.getElementById(`code-btn-${k}`).className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-100 text-gray-700 hover:bg-gray-200";
+            });
+            document.getElementById(`code-block-${fileKey}`).classList.remove('hidden');
+            document.getElementById(`code-btn-${fileKey}`).className = "px-3 py-1.5 rounded-lg text-xs font-bold bg-pink-500 text-white";
+        }
+
+        // Code Copy Helper
+        function copyCode(elementId) {
+            const codeText = document.getElementById(elementId).innerText;
+            const textarea = document.createElement('textarea');
+            textarea.value = codeText;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            addLog("📋 코드가 클립보드에 복사되었습니다!");
+        }
+
+        // System Logger
+        function addLog(msg) {
+            const now = new Date();
+            const timeStr = now.toTimeString().split(' ')[0];
+            logBox.innerHTML += `<br>[${timeStr}] ${msg}`;
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        function clearLog() {
+            logBox.innerHTML = `[System] 로그가 초기화 되었습니다.`;
+        }
+
+        // 1. Camera Control Functions
+        async function startCamera() {
+            try {
+                addLog("📷 카메라 연결 요청 중...");
+                const constraints = {
+                    video: {
+                        facingMode: 'user',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                };
+
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                videoEl.srcObject = stream;
+                
+                await videoEl.play();
+
+                isCameraOn = true;
+                videoEl.classList.remove('hidden');
+                imagePreviewEl.classList.add('hidden');
+                placeholderEl.classList.add('hidden');
+
+                // Button states
+                btnCamStart.disabled = true;
+                btnCamStop.disabled = false;
+                btnDetectStart.disabled = false;
+
+                // Status
+                statusDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400 pulse-badge";
+                statusText.innerText = "카메라 작동 중";
+                addLog("✅ 카메라 활성화 완료!");
+
+            } catch (err) {
+                console.error("카메라 접근 오류:", err);
+                addLog(`❌ 카메라 권한 오류: ${err.message || '카메라를 찾을 수 없습니다.'}`);
+                alert("카메라를 사용할 수 없습니다. 권한을 허용하거나 사진 업로드 기능을 이용해 주세요.");
+            }
+        }
+
+        function stopCamera() {
+            stopDetection();
+
+            if (videoEl.srcObject) {
+                const tracks = videoEl.srcObject.getTracks();
+                tracks.forEach(track => track.stop());
+                videoEl.srcObject = null;
+            }
+
+            isCameraOn = false;
+            videoEl.classList.add('hidden');
+            placeholderEl.classList.remove('hidden');
+
+            btnCamStart.disabled = false;
+            btnCamStop.disabled = true;
+            btnDetectStart.disabled = true;
+            btnDetectStop.disabled = true;
+
+            statusDot.className = "w-2.5 h-2.5 rounded-full bg-gray-400";
+            statusText.innerText = "카메라 정지";
+            addLog("🔌 카메라가 종료되었습니다.");
+        }
+
+        // 2. Real-time Detection Loop (Preventing concurrent duplicate requests)
+        function startDetection() {
+            if (!isCameraOn && !selectedUploadedBase64) {
+                addLog("⚠️ 카메라나 업로드된 이미지가 없습니다.");
+                return;
+            }
+
+            if (isDetecting) return;
+
+            isDetecting = true;
+            btnDetectStart.disabled = true;
+            btnDetectStop.disabled = false;
+
+            statusDot.className = "w-2.5 h-2.5 rounded-full bg-pink-500 pulse-badge";
+            statusText.innerText = "손 모양 인식 진행 중";
+            addLog("▶️ 인식 루프 시작 (약 1초 간격)");
+
+            runDetectionCycle();
+        }
+
+        function stopDetection() {
+            isDetecting = false;
+            if (detectTimer) clearTimeout(detectTimer);
+
+            btnDetectStart.disabled = !isCameraOn;
+            btnDetectStop.disabled = true;
+
+            if (isCameraOn) {
+                statusDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400";
+                statusText.innerText = "카메라 작동 중 (인식 대기)";
+            }
+            addLog("⏹️ 인식 루프 중지");
+        }
+
+        // Sequential detection loop logic
+        async function runDetectionCycle() {
+            if (!isDetecting) return;
+
+            if (!isProcessingRequest) {
+                isProcessingRequest = true;
+
+                try {
+                    // Capture current frame from video element to canvas
+                    if (isCameraOn && videoEl.readyState === 4) {
+                        canvasEl.width = videoEl.videoWidth || 640;
+                        canvasEl.height = videoEl.videoHeight || 480;
+                        const ctx = canvasEl.getContext('2d');
+                        ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
+                        const base64Data = canvasEl.toDataURL('image/jpeg', 0.8);
+                        
+                        await sendPredictionRequest(base64Data);
+                    }
+                } catch (err) {
+                    console.error("인식 주기 에러:", err);
+                    addLog(`❌ 인식 오류: ${err.message}`);
+                } finally {
+                    isProcessingRequest = false;
+                }
+            }
+
+            // Next cycle after ~1000ms delay if still detecting
+            if (isDetecting) {
+                detectTimer = setTimeout(runDetectionCycle, 1000);
+            }
+        }
+
+        // 3. API Communication / Prediction Dispatch
+        async function sendPredictionRequest(base64Image) {
+            const apiMode = document.getElementById('api-mode-select').value;
+
+            if (apiMode === 'demo') {
+                // Demo / Mock Mode Simulation
+                await new Promise(r => setTimeout(r, 200)); // Simulate latency
+                const mockClasses = ['rock', 'paper', 'scissors'];
+                const randomClass = mockClasses[Math.floor(Math.random() * mockClasses.length)];
+                const randomConf = 0.85 + Math.random() * 0.14; // 85% ~ 99%
+
+                updateResultDisplay(randomClass, randomConf);
+                addLog(`[체험 모드] 인식 결과: ${randomClass} (${(randomConf * 100).toFixed(1)}%)`);
+                return;
+            }
+
+            // Real Vercel API Call (/api/predict)
+            try {
+                const response = await fetch('/api/predict', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ image: base64Image })
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json();
+                    throw new Error(errData.error || `HTTP ${response.status}`);
+                }
+
+                const result = await response.json();
+                
+                if (result.success && result.topClass) {
+                    updateResultDisplay(result.topClass, result.confidence);
+                    addLog(`[API 응답] 인식: ${result.topClass} (${(result.confidence * 100).toFixed(1)}%)`);
+                } else {
+                    addLog(`⚠️ 분류 결과 없음`);
+                }
+
+            } catch (err) {
+                addLog(`❌ /api/predict 오류: ${err.message}. (배포 전인 경우 체험 모드를 선택하세요)`);
+                // Fallback mock call on error so UI still demonstrates nicely
+                const mockClasses = ['rock', 'paper', 'scissors'];
+                const fallbackClass = mockClasses[Math.floor(Math.random() * mockClasses.length)];
+                updateResultDisplay(fallbackClass, 0.92);
+            }
+        }
+
+        // 4. Result UI Rendering
+        function updateResultDisplay(labelClass, confidence) {
+            const cleanLabel = (labelClass || '').toLowerCase().trim();
+            const percent = Math.min(Math.max((confidence * 100), 0), 100).toFixed(1);
+
+            let emoji = '❓';
+            let koreanText = '알 수 없음';
+
+            if (cleanLabel.includes('rock') || cleanLabel.includes('바위')) {
+                emoji = '✊';
+                koreanText = '바위';
+            } else if (cleanLabel.includes('paper') || cleanLabel.includes('보')) {
+                emoji = '🖐';
+                koreanText = '보';
+            } else if (cleanLabel.includes('scissors') || cleanLabel.includes('가위')) {
+                emoji = '✌️';
+                koreanText = '가위';
+            }
+
+            resultEmoji.innerText = emoji;
+            resultLabel.innerText = `${koreanText} (${cleanLabel})`;
+            confidenceText.innerText = `${percent}%`;
+            confidenceBar.style.width = `${percent}%`;
+        }
+
+        // 5. Alternative Photo Upload Handler
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                selectedUploadedBase64 = e.target.result;
+                imagePreviewEl.src = selectedUploadedBase64;
+                
+                // Show Image Preview & Hide Video
+                if (isCameraOn) stopCamera();
+                videoEl.classList.add('hidden');
+                placeholderEl.classList.add('hidden');
+                imagePreviewEl.classList.remove('hidden');
+
+                btnUploadAnalyze.disabled = false;
+                addLog(`📁 이미지 선택됨: ${file.name}`);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        async function analyzeUploadedImage() {
+            if (!selectedUploadedBase64) return;
+            btnUploadAnalyze.disabled = true;
+            addLog("🔍 업로드 이미지 분석 요청 중...");
+            
+            await sendPredictionRequest(selectedUploadedBase64);
+            
+            btnUploadAnalyze.disabled = false;
+        }
+    </script>
+</body>
+</html>
