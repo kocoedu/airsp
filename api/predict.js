@@ -10,36 +10,37 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: '이미지 데이터가 전달되지 않았습니다.' });
     }
 
-    const apiKey = process.env.ROBOFLOW_API_KEY;
-    const endpoint = process.env.ROBOFLOW_ENDPOINT;
+    // 환경변수 다듬기 (공백 및 따옴표 제거)
+    const apiKey = (process.env.ROBOFLOW_API_KEY || '').trim().replace(/^["']|["']$/g, '');
+    let rawEndpoint = (process.env.ROBOFLOW_ENDPOINT || '').trim().replace(/^["']|["']$/g, '');
 
-    if (!apiKey || !endpoint) {
+    if (!apiKey || !rawEndpoint) {
       return res.status(500).json({
         error: 'Vercel 환경변수(ROBOFLOW_API_KEY 또는 ROBOFLOW_ENDPOINT)가 설정되지 않았습니다.'
       });
     }
 
-    // Endpoint URL 및 API Key 파라미터 정리
-    let targetUrl = endpoint.trim();
-    const separator = targetUrl.includes('?') ? '&' : '?';
-    if (!targetUrl.includes('api_key=')) {
-      targetUrl = `${targetUrl}${separator}api_key=${apiKey.trim()}`;
-    }
+    // URL에서 기존 쿼리스트링 분리
+    const urlObj = new URL(rawEndpoint);
+    urlObj.searchParams.delete('api_key'); // 기존 api_key 파라미터가 있다면 제거 후 순수 URL 생성
+    const cleanEndpoint = urlObj.toString();
 
-    // Workflow / Inference API 유형 자동 감지 및 JSON Payload 구축
-    const isWorkflow = targetUrl.includes('/workflows/') || targetUrl.includes('/outline.');
-    
-    // Base64 Data URL 전체 준비 (data:image/jpeg;base64,... 형태 유지)
     const formattedBase64Image = image.startsWith('data:') 
       ? image 
       : `data:image/jpeg;base64,${image}`;
 
+    const isWorkflow = cleanEndpoint.includes('/workflows/') || cleanEndpoint.includes('/outline.');
+
     let requestBody;
-    let headers = { 'Content-Type': 'application/json' };
+    let headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}` // 1. Header 인증 추가
+    };
 
     if (isWorkflow) {
-      // Roboflow Cloud Workflow 규격 (DINOv3 Workflow 포함)
+      // 2. Roboflow Workflow 규격 (Body 내부 api_key 포함)
       requestBody = JSON.stringify({
+        api_key: apiKey,
         inputs: {
           image: {
             type: 'url',
@@ -48,7 +49,8 @@ export default async function handler(req, res) {
         }
       });
     } else {
-      // 일반 Roboflow Hosted Inference API 규격
+      // 일반 Inference API 규격
+      urlObj.searchParams.set('api_key', apiKey);
       requestBody = JSON.stringify({
         image: {
           type: 'base64',
@@ -57,7 +59,8 @@ export default async function handler(req, res) {
       });
     }
 
-    // Roboflow Cloud API 호출
+    // API 호출
+    const targetUrl = isWorkflow ? cleanEndpoint : urlObj.toString();
     const response = await fetch(targetUrl, {
       method: 'POST',
       headers: headers,
@@ -68,35 +71,13 @@ export default async function handler(req, res) {
 
     if (!response.ok) {
       console.error('Roboflow API HTTP Error:', response.status, resultText);
-      
-      // Workflow JSON 호출 실패 시 2차 Fallback (x-www-form-urlencoded 전송 시도)
-      if (response.status === 422 && !isWorkflow) {
-        const rawBase64 = formattedBase64Image.replace(/^data:image\/(png|jpeg|jpg);base64,/, '');
-        const fallbackResponse = await fetch(targetUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: rawBase64
-        });
-        const fallbackText = await fallbackResponse.text();
-        if (fallbackResponse.ok) {
-          const fallbackData = JSON.parse(fallbackText);
-          return parseAndReturnResult(res, fallbackData);
-        }
-      }
-
       return res.status(response.status).json({
         error: `Roboflow API 오류 (${response.status})`,
         details: resultText
       });
     }
 
-    let resultData;
-    try {
-      resultData = JSON.parse(resultText);
-    } catch (e) {
-      return res.status(500).json({ error: 'Roboflow 응답 파싱 실패', raw: resultText });
-    }
-
+    const resultData = JSON.parse(resultText);
     return parseAndReturnResult(res, resultData);
 
   } catch (error) {
@@ -108,14 +89,14 @@ export default async function handler(req, res) {
   }
 }
 
-// 예측 결과 구조 분석 및 파싱 함수
 function parseAndReturnResult(res, resultData) {
   let topClass = 'unknown';
   let confidence = 0.0;
 
-  // 1. Workflow Output 스키마 파싱
+  // 1. Workflow Output 구조 대응
   if (resultData.outputs && Array.isArray(resultData.outputs) && resultData.outputs.length > 0) {
     const firstOutput = resultData.outputs[0];
+    // Workflow 내의 다양한 노드 출력 이름 대응
     const predictions = firstOutput.predictions || firstOutput.output?.predictions || firstOutput.predictions?.predictions;
     
     if (predictions && Array.isArray(predictions) && predictions.length > 0) {
@@ -126,7 +107,7 @@ function parseAndReturnResult(res, resultData) {
       confidence = firstOutput.confidence || 0.0;
     }
   } 
-  // 2. Standard Detection / Classification 스키마 파싱
+  // 2. 일반 Model Inference 구조 대응
   else if (resultData.predictions && Array.isArray(resultData.predictions) && resultData.predictions.length > 0) {
     topClass = resultData.predictions[0].class || resultData.predictions[0].label || 'unknown';
     confidence = resultData.predictions[0].confidence || 0.0;
