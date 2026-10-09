@@ -10,7 +10,6 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: '이미지 데이터가 전달되지 않았습니다.' });
     }
 
-    // 환경변수 다듬기 (공백 및 따옴표 제거)
     const apiKey = (process.env.ROBOFLOW_API_KEY || '').trim().replace(/^["']|["']$/g, '');
     let rawEndpoint = (process.env.ROBOFLOW_ENDPOINT || '').trim().replace(/^["']|["']$/g, '');
 
@@ -20,9 +19,8 @@ export default async function handler(req, res) {
       });
     }
 
-    // URL에서 기존 쿼리스트링 분리
     const urlObj = new URL(rawEndpoint);
-    urlObj.searchParams.delete('api_key'); // 기존 api_key 파라미터가 있다면 제거 후 순수 URL 생성
+    urlObj.searchParams.delete('api_key');
     const cleanEndpoint = urlObj.toString();
 
     const formattedBase64Image = image.startsWith('data:') 
@@ -34,11 +32,10 @@ export default async function handler(req, res) {
     let requestBody;
     let headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}` // 1. Header 인증 추가
+      'Authorization': `Bearer ${apiKey}`
     };
 
     if (isWorkflow) {
-      // 2. Roboflow Workflow 규격 (Body 내부 api_key 포함)
       requestBody = JSON.stringify({
         api_key: apiKey,
         inputs: {
@@ -49,7 +46,6 @@ export default async function handler(req, res) {
         }
       });
     } else {
-      // 일반 Inference API 규격
       urlObj.searchParams.set('api_key', apiKey);
       requestBody = JSON.stringify({
         image: {
@@ -59,7 +55,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // API 호출
     const targetUrl = isWorkflow ? cleanEndpoint : urlObj.toString();
     const response = await fetch(targetUrl, {
       method: 'POST',
@@ -78,7 +73,7 @@ export default async function handler(req, res) {
     }
 
     const resultData = JSON.parse(resultText);
-    return parseAndReturnResult(res, resultData);
+    return parseSmartResult(res, resultData);
 
   } catch (error) {
     console.error('Predict API Error:', error);
@@ -89,37 +84,59 @@ export default async function handler(req, res) {
   }
 }
 
-function parseAndReturnResult(res, resultData) {
-  let topClass = 'unknown';
+// Roboflow DINOv3 및 Workflow 결과 스마트 파싱 함수
+function parseSmartResult(res, rawData) {
+  let detectedClass = 'unknown';
   let confidence = 0.0;
 
-  // 1. Workflow Output 구조 대응
-  if (resultData.outputs && Array.isArray(resultData.outputs) && resultData.outputs.length > 0) {
-    const firstOutput = resultData.outputs[0];
-    // Workflow 내의 다양한 노드 출력 이름 대응
-    const predictions = firstOutput.predictions || firstOutput.output?.predictions || firstOutput.predictions?.predictions;
-    
-    if (predictions && Array.isArray(predictions) && predictions.length > 0) {
-      topClass = predictions[0].class || predictions[0].label || predictions[0].top || 'unknown';
-      confidence = predictions[0].confidence || predictions[0].score || 0.0;
-    } else if (firstOutput.top_class || firstOutput.prediction) {
-      topClass = firstOutput.top_class || firstOutput.prediction;
-      confidence = firstOutput.confidence || 0.0;
+  // JSON 트리 전체를 재귀 탐색하며 예측 정보 추출
+  function searchNode(obj) {
+    if (!obj || typeof obj !== 'object') return;
+
+    // 1. 객체 내에서 class/label/prediction 및 confidence/score 찾기
+    const possibleClass = obj.class || obj.label || obj.prediction || obj.top_class || obj.top;
+    const possibleConf = obj.confidence ?? obj.score ?? obj.confidence_score;
+
+    if (possibleClass && typeof possibleClass === 'string' && possibleClass !== 'unknown') {
+      const lowerCls = possibleClass.toLowerCase();
+      if (lowerCls.includes('rock') || lowerCls.includes('paper') || lowerCls.includes('scissors') || lowerCls.includes('바위') || lowerCls.includes('보') || lowerCls.includes('가위')) {
+        detectedClass = lowerCls;
+        if (possibleConf !== undefined) {
+          confidence = Number(possibleConf);
+        }
+        return;
+      }
     }
-  } 
-  // 2. 일반 Model Inference 구조 대응
-  else if (resultData.predictions && Array.isArray(resultData.predictions) && resultData.predictions.length > 0) {
-    topClass = resultData.predictions[0].class || resultData.predictions[0].label || 'unknown';
-    confidence = resultData.predictions[0].confidence || 0.0;
-  } else if (resultData.top) {
-    topClass = resultData.top;
-    confidence = resultData.confidence || 0.0;
+
+    // 2. 배열인 경우 순회
+    if (Array.isArray(obj)) {
+      for (const item of obj) {
+        searchNode(item);
+        if (detectedClass !== 'unknown') return;
+      }
+    } 
+    // 3. 객체 키 순회
+    else {
+      for (const key of Object.keys(obj)) {
+        // 이미 찾았으면 중단
+        if (detectedClass !== 'unknown') return;
+        searchNode(obj[key]);
+      }
+    }
   }
+
+  searchNode(rawData);
+
+  // 클래스 정규화 (rock, paper, scissors)
+  let normalizedClass = 'unknown';
+  if (detectedClass.includes('rock') || detectedClass.includes('바위')) normalizedClass = 'rock';
+  else if (detectedClass.includes('paper') || detectedClass.includes('보')) normalizedClass = 'paper';
+  else if (detectedClass.includes('scissors') || detectedClass.includes('가위')) normalizedClass = 'scissors';
 
   return res.status(200).json({
     success: true,
-    topClass: String(topClass).toLowerCase(),
-    confidence: Number(confidence),
-    raw: resultData
+    topClass: normalizedClass,
+    confidence: confidence,
+    raw: rawData // Vercel 개발 도구나 브라우저에서 원본 구조 확인용
   });
 }
